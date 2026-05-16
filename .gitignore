@@ -1,0 +1,11 @@
+.godot/
+builds/
+Export/
+*.apk
+*.aab
+*.idsig
+*.keystore
+*.jks
+*.tmp
+*.log
+export_presets.cfg.tmp
