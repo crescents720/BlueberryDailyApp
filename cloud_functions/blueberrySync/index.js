@@ -86,7 +86,7 @@ async function upsertRecord(input) {
   const existing = await records.doc(recordId).get().catch(() => ({ data: [] }));
   const current = Array.isArray(existing.data) && existing.data.length > 0 ? existing.data[0] : null;
   const incomingUpdatedAt = Number(input.updated_at || now);
-  if (current && Number(current.updated_at || 0) > incomingUpdatedAt) {
+  if (current && Number(current.updated_at || 0) >= incomingUpdatedAt) {
     return current;
   }
 
@@ -98,7 +98,7 @@ async function upsertRecord(input) {
     data: input.data && typeof input.data === "object" ? input.data : {},
     deleted: Boolean(input.deleted),
     created_at: Number(input.created_at || (current && current.created_at) || now),
-    updated_at: Math.max(incomingUpdatedAt, now),
+    updated_at: incomingUpdatedAt || now,
     updated_by: String(input.updated_by || "app")
   };
 

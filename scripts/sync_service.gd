@@ -44,7 +44,8 @@ func _post(payload: Dictionary) -> Dictionary:
 	if request_result != HTTPRequest.RESULT_SUCCESS:
 		return {"ok": false, "error": "网络请求失败：%s（%s）" % [_request_result_name(request_result), request_result]}
 	if response_code < 200 or response_code >= 300:
-		return {"ok": false, "error": "云端返回 %s：%s" % [response_code, text]}
+		var detail := text if text.strip_edges() != "" else "空响应，可能是云函数超时或网关中断"
+		return {"ok": false, "error": "云端返回 %s：%s" % [response_code, detail]}
 	if typeof(parsed) != TYPE_DICTIONARY:
 		return {"ok": false, "error": "云端响应不是有效 JSON：%s" % text}
 	return parsed

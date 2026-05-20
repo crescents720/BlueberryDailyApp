@@ -102,10 +102,11 @@ func merge_remote_records(remote_records: Array) -> int:
 	return changed
 
 
-func sync_payload() -> Array:
+func sync_payload(since: int = 0) -> Array:
 	var payload: Array = []
 	for record in records:
-		payload.append(_record_to_remote(record))
+		if int(record.get("updated_at_ms", 0)) > since:
+			payload.append(_record_to_remote(record))
 	return payload
 
 

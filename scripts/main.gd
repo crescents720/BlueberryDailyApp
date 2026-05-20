@@ -451,7 +451,7 @@ func _sync_silently() -> void:
 func _sync_now() -> Dictionary:
 	if sync_service == null:
 		return {"ok": false, "error": "同步服务未初始化"}
-	var result: Dictionary = await sync_service.sync_records(store.sync_payload(), store.last_sync_at)
+	var result: Dictionary = await sync_service.sync_records(store.sync_payload(store.last_sync_at), store.last_sync_at)
 	if not bool(result.get("ok", false)):
 		return result
 	var remote_records: Array = result.get("records", [])
