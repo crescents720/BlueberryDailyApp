@@ -437,7 +437,7 @@ func _sync_and_refresh_home() -> void:
 	var result: Dictionary = await _sync_now()
 	if sync_status_label != null:
 		if bool(result.get("ok", false)):
-			sync_status_label.text = "同步完成：云端更新 %s 条" % int(result.get("merged", 0))
+			sync_status_label.text = "同步完成：下载 %s 条，上传 %s 条" % [int(result.get("merged", 0)), int(result.get("uploaded", 0))]
 			await get_tree().create_timer(0.5).timeout
 			show_home()
 		else:
@@ -451,17 +451,33 @@ func _sync_silently() -> void:
 func _sync_now() -> Dictionary:
 	if sync_service == null:
 		return {"ok": false, "error": "同步服务未初始化"}
-	var result: Dictionary = await sync_service.sync_records(store.sync_payload(store.last_sync_at), store.last_sync_at)
-	if not bool(result.get("ok", false)):
-		return result
-	var remote_records: Array = result.get("records", [])
-	var merged := store.merge_remote_records(remote_records)
+	var upload_payload := store.sync_payload()
+	var cursor := ""
+	var merged := 0
+	var uploaded_ids: Array = []
 	var latest := store.last_sync_at
-	for record in remote_records:
-		if record is Dictionary:
-			latest = max(latest, int(record.get("updated_at", 0)))
+	var result: Dictionary = {}
+	var first_request := true
+	for page in range(20):
+		result = await sync_service.sync_records(upload_payload if first_request else [], store.last_sync_at, cursor)
+		first_request = false
+		if not bool(result.get("ok", false)):
+			return result
+		for saved in result.get("saved", []):
+			if saved is Dictionary:
+				uploaded_ids.append(str(saved.get("record_id", saved.get("id", ""))))
+		var remote_records: Array = result.get("records", [])
+		merged += store.merge_remote_records(remote_records)
+		for record in remote_records:
+			if record is Dictionary:
+				latest = max(latest, int(record.get("updated_at", 0)))
+		cursor = str(result.get("next_cursor", ""))
+		if not bool(result.get("has_more", false)) or cursor == "":
+			break
+	store.mark_uploaded(uploaded_ids)
 	store.set_last_sync_at(latest)
 	result["merged"] = merged
+	result["uploaded"] = uploaded_ids.size()
 	return result
 
 

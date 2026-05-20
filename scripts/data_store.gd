@@ -82,6 +82,7 @@ func delete_record(id: String) -> bool:
 			records[i]["deleted"] = true
 			records[i]["updated_at"] = Time.get_datetime_string_from_system()
 			records[i]["updated_at_ms"] = _now_ms()
+			records[i]["local_only_delete"] = true
 			save_records()
 			return true
 	return false
@@ -95,7 +96,7 @@ func merge_remote_records(remote_records: Array) -> int:
 		var local_record := _record_from_remote(remote)
 		if local_record.is_empty():
 			continue
-		if _upsert_if_newer(local_record):
+		if _add_if_missing(local_record):
 			changed += 1
 	if changed > 0:
 		save_records()
@@ -105,9 +106,19 @@ func merge_remote_records(remote_records: Array) -> int:
 func sync_payload(since: int = 0) -> Array:
 	var payload: Array = []
 	for record in records:
-		if int(record.get("updated_at_ms", 0)) > since:
+		if not bool(record.get("deleted", false)) and not bool(record.get("synced", false)):
 			payload.append(_record_to_remote(record))
 	return payload
+
+
+func mark_uploaded(record_ids: Array) -> void:
+	var changed := false
+	for record in records:
+		if record_ids.has(str(record.get("id", ""))):
+			record["synced"] = true
+			changed = true
+	if changed:
+		save_records()
 
 
 func set_last_sync_at(value: int) -> void:
@@ -217,16 +228,14 @@ func _now_ms() -> int:
 	return int(Time.get_unix_time_from_system() * 1000.0)
 
 
-func _upsert_if_newer(incoming: Dictionary) -> bool:
+func _add_if_missing(incoming: Dictionary) -> bool:
 	var incoming_id := str(incoming.get("id", ""))
 	if incoming_id == "":
 		return false
 	for i in range(records.size()):
 		if str(records[i].get("id", "")) == incoming_id:
-			if int(records[i].get("updated_at_ms", 0)) >= int(incoming.get("updated_at_ms", 0)):
-				return false
-			records[i] = incoming
-			return true
+			return false
+	incoming["synced"] = true
 	records.append(incoming)
 	return true
 
@@ -237,7 +246,7 @@ func _record_to_remote(record: Dictionary) -> Dictionary:
 		"kind": str(record.get("kind", "")),
 		"date": str(record.get("date", "")),
 		"data": record.get("data", {}),
-		"deleted": bool(record.get("deleted", false)),
+		"deleted": false,
 		"created_at": int(record.get("created_at_ms", _now_ms())),
 		"updated_at": int(record.get("updated_at_ms", _now_ms())),
 		"updated_by": "godot_app"
@@ -248,7 +257,7 @@ func _record_from_remote(remote: Dictionary) -> Dictionary:
 	var record_id := str(remote.get("record_id", remote.get("id", "")))
 	if record_id == "":
 		return {}
-	return {
+	var record := {
 		"id": record_id,
 		"kind": str(remote.get("kind", "")),
 		"date": str(remote.get("date", "")),
@@ -259,6 +268,8 @@ func _record_from_remote(remote: Dictionary) -> Dictionary:
 		"created_at_ms": int(remote.get("created_at", _now_ms())),
 		"updated_at_ms": int(remote.get("updated_at", _now_ms()))
 	}
+	record["synced"] = true
+	return record
 
 
 func _date_to_day_number(date: String) -> int:

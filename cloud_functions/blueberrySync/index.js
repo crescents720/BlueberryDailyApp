@@ -9,6 +9,7 @@ const records = db.collection("records");
 
 const APP_SECRET = process.env.BLUEBERRY_SYNC_SECRET || "xiaolanmei-family-2026";
 const FAMILY_ID = "xiaolanmei";
+const PAGE_SIZE = 100;
 
 exports.main = async function (event) {
   try {
@@ -25,13 +26,13 @@ exports.main = async function (event) {
       case "ping":
         return ok({ ok: true, message: "pong", server_time: Date.now() });
       case "pull":
-        return ok({ ok: true, records: await pullRecords(Number(request.since || 0)) });
+        return ok(await pullRecords(Number(request.since || 0), String(request.cursor || "")));
       case "upsert":
-        return ok({ ok: true, record: await upsertRecord(request.record || {}) });
+        return ok({ ok: true, record: await addRecordIfMissing(request.record || {}) });
       case "delete":
-        return ok({ ok: true, record: await deleteRecord(String(request.record_id || "")) });
+        return ok({ ok: true, skipped: true, message: "cloud delete is disabled" });
       case "sync":
-        return ok(await syncRecords(Array.isArray(request.records) ? request.records : [], Number(request.since || 0)));
+        return ok(await syncRecords(Array.isArray(request.records) ? request.records : [], Number(request.since || 0), String(request.cursor || "")));
       default:
         return fail(400, "unknown action");
     }
@@ -55,28 +56,38 @@ function parseRequest(event) {
   return body;
 }
 
-async function pullRecords(since) {
+async function pullRecords(since, cursor) {
   let query = records.where({ family_id: FAMILY_ID });
   if (since > 0) {
     query = query.where({ family_id: FAMILY_ID, updated_at: db.command.gt(since) });
   }
-  const result = await query.orderBy("updated_at", "asc").limit(1000).get();
-  return result.data || [];
-}
-
-async function syncRecords(localRecords, since) {
-  const saved = [];
-  for (const localRecord of localRecords) {
-    saved.push(await upsertRecord(localRecord));
+  if (cursor) {
+    query = query.where({ family_id: FAMILY_ID, updated_at: db.command.gt(Number(cursor)) });
   }
+  const result = await query.orderBy("updated_at", "asc").limit(PAGE_SIZE).get();
+  const data = result.data || [];
+  const last = data.length > 0 ? data[data.length - 1] : null;
   return {
     ok: true,
-    saved,
-    records: await pullRecords(since)
+    records: data,
+    next_cursor: data.length >= PAGE_SIZE && last ? String(last.updated_at || "") : "",
+    has_more: data.length >= PAGE_SIZE
   };
 }
 
-async function upsertRecord(input) {
+async function syncRecords(localRecords, since, cursor) {
+  const saved = [];
+  for (const localRecord of localRecords) {
+    const result = await addRecordIfMissing(localRecord);
+    if (result && result.created) {
+      saved.push(result.record);
+    }
+  }
+  const pulled = await pullRecords(since, cursor);
+  return { ...pulled, saved };
+}
+
+async function addRecordIfMissing(input) {
   const now = Date.now();
   const recordId = sanitizeId(input.record_id || input.id);
   if (!recordId) {
@@ -85,9 +96,8 @@ async function upsertRecord(input) {
 
   const existing = await records.doc(recordId).get().catch(() => ({ data: [] }));
   const current = Array.isArray(existing.data) && existing.data.length > 0 ? existing.data[0] : null;
-  const incomingUpdatedAt = Number(input.updated_at || now);
-  if (current && Number(current.updated_at || 0) >= incomingUpdatedAt) {
-    return current;
+  if (current) {
+    return { created: false, record: current };
   }
 
   const record = {
@@ -96,33 +106,14 @@ async function upsertRecord(input) {
     kind: String(input.kind || ""),
     date: String(input.date || ""),
     data: input.data && typeof input.data === "object" ? input.data : {},
-    deleted: Boolean(input.deleted),
-    created_at: Number(input.created_at || (current && current.created_at) || now),
-    updated_at: incomingUpdatedAt || now,
+    deleted: false,
+    created_at: Number(input.created_at || now),
+    updated_at: Number(input.updated_at || now),
     updated_by: String(input.updated_by || "app")
   };
 
   await records.doc(recordId).set(record);
-  return record;
-}
-
-async function deleteRecord(recordIdRaw) {
-  const recordId = sanitizeId(recordIdRaw);
-  if (!recordId) {
-    throw new Error("record_id is required");
-  }
-  const existing = await records.doc(recordId).get().catch(() => ({ data: [] }));
-  const current = Array.isArray(existing.data) && existing.data.length > 0 ? existing.data[0] : {};
-  const record = {
-    ...current,
-    record_id: recordId,
-    family_id: FAMILY_ID,
-    deleted: true,
-    updated_at: Date.now(),
-    updated_by: "app"
-  };
-  await records.doc(recordId).set(record);
-  return record;
+  return { created: true, record };
 }
 
 function sanitizeId(value) {

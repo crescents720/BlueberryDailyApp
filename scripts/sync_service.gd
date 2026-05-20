@@ -18,11 +18,12 @@ func ping() -> Dictionary:
 	return result
 
 
-func sync_records(records: Array, since: int) -> Dictionary:
+func sync_records(records: Array, since: int, cursor: String = "") -> Dictionary:
 	var result: Dictionary = await _post({
 		"action": "sync",
 		"records": records,
-		"since": since
+		"since": since,
+		"cursor": cursor
 	})
 	return result
 
