@@ -522,6 +522,7 @@ func _screen(title: String, back: bool, back_to: Callable = Callable(self, "show
 	page.set_meta("page", true)
 	page.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	page.clip_contents = true
+	page.child_entered_tree.connect(func(node): call_deferred("_make_scroll_friendly", node))
 	add_child(page)
 	_animate_page_in(page, old_pages)
 	
@@ -559,6 +560,7 @@ func _screen(title: String, back: bool, back_to: Callable = Callable(self, "show
 	label.add_theme_font_size_override("font_size", 30)
 	label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	header.add_child(label)
+	call_deferred("_make_scroll_friendly", page)
 	return body
 
 
@@ -579,6 +581,22 @@ func _animate_page_in(page: Control, old_pages: Array) -> void:
 			if is_instance_valid(old_page):
 				old_page.queue_free()
 	)
+
+
+func _make_scroll_friendly(node: Node) -> void:
+	if node is ScrollContainer:
+		node.mouse_filter = Control.MOUSE_FILTER_STOP
+	elif node is Label or node is TextureRect or node is ColorRect:
+		node.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	elif node is Button or node is OptionButton or node is PanelContainer:
+		node.mouse_filter = Control.MOUSE_FILTER_PASS
+	elif node is LineEdit or node is TextEdit:
+		node.mouse_filter = Control.MOUSE_FILTER_PASS
+	elif node is Control:
+		node.mouse_filter = Control.MOUSE_FILTER_PASS
+
+	for child in node.get_children():
+		_make_scroll_friendly(child)
 
 
 func _big_button(title: String, subtitle: String, action: Callable, centered := false) -> PanelContainer:
@@ -1004,6 +1022,7 @@ func _show_choice_popup(title: String, options: Array, selected_value: String, o
 		row_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		list.add_child(row_button)
 
+	call_deferred("_make_scroll_friendly", popup)
 	popup.popup_centered(Vector2i(int(minf(360.0, get_viewport_rect().size.x - 32.0)), int(minf(640.0, get_viewport_rect().size.y - 64.0))))
 
 
