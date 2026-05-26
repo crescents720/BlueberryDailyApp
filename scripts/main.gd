@@ -202,11 +202,17 @@ func _collect_record() -> Dictionary:
 		"growth":
 			var height_text := _field_text("height_cm")
 			var weight_text := _field_text("weight_kg")
-			if not _is_valid_positive_number(height_text):
+			if height_text == "" and weight_text == "":
+				return _invalid("身高和体重至少填写一项。")
+			if height_text != "" and not _is_valid_positive_number(height_text):
 				return _invalid("身高请填写有效数字。")
-			if not _is_valid_positive_number(weight_text):
+			if weight_text != "" and not _is_valid_positive_number(weight_text):
 				return _invalid("体重请填写有效数字。")
-			data = {"height_cm": float(height_text), "weight_kg": float(weight_text)}
+			data = {}
+			if height_text != "":
+				data["height_cm"] = float(height_text)
+			if weight_text != "":
+				data["weight_kg"] = float(weight_text)
 
 	var date := _control_value("date")
 	if not _looks_like_date(date):
@@ -417,7 +423,7 @@ func _table_content(record: Dictionary, data: Dictionary) -> String:
 		"supplement":
 			return str(data.get("item", ""))
 		"growth":
-			return "身高 %s cm\n体重 %s kg" % [_format_measure(data.get("height_cm", "")), _format_measure(data.get("weight_kg", ""))]
+			return _growth_measure_text(data)
 		_:
 			return ""
 
@@ -1098,6 +1104,15 @@ func _format_measure(value) -> String:
 	return text
 
 
+func _growth_measure_text(data: Dictionary) -> String:
+	var parts: Array = []
+	if data.has("height_cm"):
+		parts.append("身高 %s cm" % _format_measure(data.get("height_cm", "")))
+	if data.has("weight_kg"):
+		parts.append("体重 %s kg" % _format_measure(data.get("weight_kg", "")))
+	return "\n".join(parts)
+
+
 func _date_options(selected_date: String) -> Array:
 	var options: Array = []
 	var today_value := store.today() if store != null else _system_today()
@@ -1267,6 +1282,6 @@ func _detail_text(record: Dictionary) -> String:
 		"supplement":
 			return "补充剂/饮水"
 		"growth":
-			return "身高：%s cm，体重：%s kg" % [_format_measure(data.get("height_cm", "")), _format_measure(data.get("weight_kg", ""))]
+			return _growth_measure_text(data).replace("\n", "，")
 		_:
 			return ""

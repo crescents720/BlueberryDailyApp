@@ -206,7 +206,7 @@ func display_title(record: Dictionary) -> String:
 		"supplement":
 			return "补充剂 · %s" % data.get("item", "")
 		"growth":
-			return "身高体重 · %scm · %skg" % [data.get("height_cm", ""), data.get("weight_kg", "")]
+			return "身高体重 · %s" % _growth_display(data)
 		_:
 			return "记录"
 
@@ -223,6 +223,15 @@ func display_time(record: Dictionary) -> String:
 func _record_time(record: Dictionary) -> String:
 	var data: Dictionary = record.get("data", {})
 	return str(data.get("start_time", data.get("time", "00:00")))
+
+
+func _growth_display(data: Dictionary) -> String:
+	var parts: Array = []
+	if data.has("height_cm"):
+		parts.append("%scm" % data.get("height_cm", ""))
+	if data.has("weight_kg"):
+		parts.append("%skg" % data.get("weight_kg", ""))
+	return " · ".join(parts)
 
 
 func _new_id() -> String:
