@@ -8,7 +8,8 @@ const KIND_LABELS := {
 	"diaper": "尿布",
 	"exercise": "锻炼",
 	"hygiene": "卫生",
-	"supplement": "补充剂"
+	"supplement": "补充剂",
+	"growth": "身高体重数据"
 }
 
 const EXERCISE_ITEMS := {
@@ -71,7 +72,7 @@ func show_home() -> void:
 	chips.add_theme_constant_override("h_separation", 8)
 	chips.add_theme_constant_override("v_separation", 8)
 	body.add_child(chips)
-	for text in ["记录 %s" % today_summary["total"], "奶量 %sml" % today_summary["milk_ml"], "尿布 %s" % today_summary["diaper"]]:
+	for text in ["记录 %s" % today_summary["total"], "奶量 %sml" % today_summary["milk_ml"], "尿布 %s" % today_summary["diaper"], "成长 %s" % today_summary["growth"]]:
 		chips.add_child(_chip(text))
 
 	body.add_child(_big_button("添加新的记录", "", Callable(self, "show_record_entry"), true))
@@ -87,7 +88,7 @@ func show_record_entry() -> void:
 	var body := _screen("添加新的记录", true)
 	message_label = _message_label()
 	body.add_child(_section_title("今天记什么？"))
-	for kind in ["feeding", "diaper", "exercise", "hygiene", "supplement"]:
+	for kind in ["feeding", "diaper", "exercise", "hygiene", "supplement", "growth"]:
 		body.add_child(_big_button(KIND_LABELS[kind], _record_hint(kind), func(): show_record_form(kind)))
 	body.add_child(message_label)
 
@@ -133,6 +134,9 @@ func show_record_form(kind: String, record: Dictionary = {}) -> void:
 			_add_line(body, "other", "其他（15字内）", data.get("other", ""), "例如 钙")
 			supplement_other_row = fields["other"].get_parent()
 			_refresh_supplement_other()
+		"growth":
+			_add_line(body, "height_cm", "身高（cm）", data.get("height_cm", ""), "例如 62.5")
+			_add_line(body, "weight_kg", "体重（kg）", data.get("weight_kg", ""), "例如 6.35")
 
 	var save := _button("保存", Callable(self, "_save_record"))
 	save.custom_minimum_size = Vector2(0, 54)
@@ -195,6 +199,14 @@ func _collect_record() -> Dictionary:
 				if str(data["other"]).length() > 15:
 					return _invalid("其他名称不能超过15字。")
 				data["item"] = data["other"]
+		"growth":
+			var height_text := _field_text("height_cm")
+			var weight_text := _field_text("weight_kg")
+			if not _is_valid_positive_number(height_text):
+				return _invalid("身高请填写有效数字。")
+			if not _is_valid_positive_number(weight_text):
+				return _invalid("体重请填写有效数字。")
+			data = {"height_cm": float(height_text), "weight_kg": float(weight_text)}
 
 	var date := _control_value("date")
 	if not _looks_like_date(date):
@@ -252,7 +264,7 @@ func _render_visual(body: VBoxContainer, date: String, weekly: bool) -> void:
 	chips.add_theme_constant_override("h_separation", 8)
 	chips.add_theme_constant_override("v_separation", 8)
 	inner.add_child(chips)
-	for text in ["总记录 %s" % summary["total"], "喂养 %s" % summary["feeding"], "奶量 %sml" % summary["milk_ml"], "尿布 %s" % summary["diaper"], "锻炼 %s" % summary["exercise"]]:
+	for text in ["总记录 %s" % summary["total"], "喂养 %s" % summary["feeding"], "奶量 %sml" % summary["milk_ml"], "尿布 %s" % summary["diaper"], "成长 %s" % summary["growth"]]:
 		chips.add_child(_chip(text))
 
 	if records.is_empty():
@@ -322,7 +334,7 @@ func _record_card(record: Dictionary, editable: bool) -> PanelContainer:
 
 
 func _add_grouped_overview(parent: VBoxContainer, records: Array, show_date: bool) -> void:
-	for kind in ["feeding", "diaper", "exercise", "hygiene", "supplement"]:
+	for kind in ["feeding", "diaper", "exercise", "hygiene", "supplement", "growth"]:
 		var grouped: Array = []
 		for record in records:
 			if str(record.get("kind", "")) == kind:
@@ -387,6 +399,8 @@ func _table_time(record: Dictionary, show_date: bool) -> String:
 	var data: Dictionary = record.get("data", {})
 	if str(record.get("kind", "")) == "feeding":
 		return "%s%s-%s" % [prefix, data.get("start_time", ""), data.get("end_time", "")]
+	if str(record.get("kind", "")) == "growth":
+		return "%s测量" % prefix
 	return "%s%s" % [prefix, data.get("time", "")]
 
 
@@ -402,6 +416,8 @@ func _table_content(record: Dictionary, data: Dictionary) -> String:
 			return str(data.get("item", ""))
 		"supplement":
 			return str(data.get("item", ""))
+		"growth":
+			return "身高 %s cm\n体重 %s kg" % [_format_measure(data.get("height_cm", "")), _format_measure(data.get("weight_kg", ""))]
 		_:
 			return ""
 
@@ -420,6 +436,8 @@ func _table_detail(record: Dictionary, data: Dictionary) -> String:
 			return "卫生护理"
 		"supplement":
 			return "补充/饮水"
+		"growth":
+			return "成长数据"
 		_:
 			return ""
 
@@ -1049,6 +1067,37 @@ func _looks_like_date(value: String) -> bool:
 	return parts.size() == 3 and parts[0].length() == 4 and parts[1].length() == 2 and parts[2].length() == 2
 
 
+func _is_valid_positive_number(value: String) -> bool:
+	var text := value.strip_edges()
+	if text == "":
+		return false
+	var dot_count := 0
+	var digit_count := 0
+	for i in range(text.length()):
+		var c := text.substr(i, 1)
+		if c == ".":
+			dot_count += 1
+			if dot_count > 1:
+				return false
+		elif c < "0" or c > "9":
+			return false
+		else:
+			digit_count += 1
+	if digit_count == 0:
+		return false
+	return float(text) > 0.0
+
+
+func _format_measure(value) -> String:
+	var number := float(value)
+	var text := "%.2f" % number
+	while text.ends_with("0"):
+		text = text.left(text.length() - 1)
+	if text.ends_with("."):
+		text = text.left(text.length() - 1)
+	return text
+
+
 func _date_options(selected_date: String) -> Array:
 	var options: Array = []
 	var today_value := store.today() if store != null else _system_today()
@@ -1196,6 +1245,8 @@ func _record_hint(kind: String) -> String:
 			return "洗脸、洗澡、游泳"
 		"supplement":
 			return "AD、D3、DHA、益生菌等"
+		"growth":
+			return "记录身高和体重"
 		_:
 			return ""
 
@@ -1215,5 +1266,7 @@ func _detail_text(record: Dictionary) -> String:
 			return "卫生护理"
 		"supplement":
 			return "补充剂/饮水"
+		"growth":
+			return "身高：%s cm，体重：%s kg" % [_format_measure(data.get("height_cm", "")), _format_measure(data.get("weight_kg", ""))]
 		_:
 			return ""

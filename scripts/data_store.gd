@@ -157,6 +157,7 @@ func summarize(record_list: Array) -> Dictionary:
 		"exercise": 0,
 		"hygiene": 0,
 		"supplement": 0,
+		"growth": 0,
 		"milk_ml": 0,
 		"pee": 0,
 		"poop": 0
@@ -204,12 +205,16 @@ func display_title(record: Dictionary) -> String:
 			return "卫生 · %s" % data.get("item", "")
 		"supplement":
 			return "补充剂 · %s" % data.get("item", "")
+		"growth":
+			return "身高体重 · %scm · %skg" % [data.get("height_cm", ""), data.get("weight_kg", "")]
 		_:
 			return "记录"
 
 
 func display_time(record: Dictionary) -> String:
 	var data: Dictionary = record.get("data", {})
+	if str(record.get("kind", "")) == "growth":
+		return "测量"
 	if data.has("start_time"):
 		return str(data.get("start_time", ""))
 	return str(data.get("time", ""))
