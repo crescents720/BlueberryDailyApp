@@ -2,6 +2,7 @@ extends Control
 
 const DataStore := preload("res://scripts/data_store.gd")
 const SyncService := preload("res://scripts/sync_service.gd")
+const AnalysisChart := preload("res://scripts/analysis_chart.gd")
 
 const KIND_LABELS := {
 	"feeding": "喂养",
@@ -77,6 +78,7 @@ func show_home() -> void:
 
 	body.add_child(_big_button("添加新的记录", "", Callable(self, "show_record_entry"), true))
 	body.add_child(_big_button("数据总览", "", Callable(self, "show_visualization"), true))
+	body.add_child(_big_button("数据分析", "", Callable(self, "show_data_analysis"), true))
 	body.add_child(_big_button("记录查询与修正", "", Callable(self, "show_search"), true))
 	body.add_child(_big_button("同步数据", "", Callable(self, "_sync_and_refresh_home"), true))
 	sync_status_label = _empty_text("同步状态：未同步")
@@ -232,6 +234,130 @@ func show_visualization(date_value: String = "") -> void:
 	controls.add_child(_button("按周", func(): _render_visual(body, _control_value("viz_date"), true)))
 	body.add_child(message_label)
 	_render_visual(body, date, false)
+
+
+func show_data_analysis(date_value: String = "") -> void:
+	var body := _screen("数据分析", true)
+	message_label = _message_label()
+	var date := date_value if date_value != "" else store.today()
+	_add_date_picker(body, "analysis_date", "结束日期", date)
+	_add_option(body, "analysis_window", "时间窗", ["近三天", "近一周", "近一月"], "近一周")
+	_add_option(body, "analysis_kind", "分析类型", ["喂养", "尿布"], "喂养")
+	body.add_child(_button("展示", func(): _render_analysis(body)))
+	body.add_child(message_label)
+	_render_analysis(body)
+
+
+func _render_analysis(body: VBoxContainer) -> void:
+	for child in body.get_children():
+		if child.has_meta("analysis"):
+			body.remove_child(child)
+			child.queue_free()
+
+	var end_date := _control_value("analysis_date")
+	if not _looks_like_date(end_date):
+		_show_message("日期格式请写成 YYYY-MM-DD。")
+		return
+	var days := _analysis_window_days(_option_value("analysis_window"))
+	var dates := _date_range_ending(end_date, days)
+	var start_date := str(dates[0])
+	var records := store.records_between(start_date, end_date)
+	var kind := _option_value("analysis_kind")
+
+	var panel := _panel()
+	panel.set_meta("analysis", true)
+	body.add_child(panel)
+	body.move_child(panel, body.get_child_count() - 2)
+	var box := VBoxContainer.new()
+	box.add_theme_constant_override("separation", 10)
+	panel.add_child(box)
+	box.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT, Control.PRESET_MODE_MINSIZE, 14)
+
+	var title := _section_title("%s · %s 至 %s" % [kind, start_date, end_date])
+	box.add_child(title)
+	var chart: BlueberryAnalysisChart = AnalysisChart.new()
+	box.add_child(chart)
+	if kind == "喂养":
+		var feeding_data := _feeding_analysis_data(records, dates)
+		chart.set_feeding_data(dates, feeding_data["totals"], feeding_data["times"])
+	else:
+		chart.set_diaper_data(dates, _diaper_analysis_points(records, dates))
+	call_deferred("_make_scroll_friendly", panel)
+
+
+func _analysis_window_days(label: String) -> int:
+	match label:
+		"近三天":
+			return 3
+		"近一月":
+			return 30
+		_:
+			return 7
+
+
+func _date_range_ending(end_date: String, days: int) -> Array:
+	var end_day := _date_to_day_number(end_date)
+	var result: Array = []
+	for i in range(days - 1, -1, -1):
+		result.append(_date_from_day_number(end_day - i))
+	return result
+
+
+func _feeding_analysis_data(records: Array, dates: Array) -> Dictionary:
+	var index := _date_index_map(dates)
+	var totals: Array = []
+	var times: Array = []
+	for _date in dates:
+		totals.append(0)
+		times.append([])
+
+	for record in records:
+		if str(record.get("kind", "")) != "feeding":
+			continue
+		var date := str(record.get("date", ""))
+		if not index.has(date):
+			continue
+		var day_index := int(index[date])
+		var data: Dictionary = record.get("data", {})
+		totals[day_index] = int(totals[day_index]) + int(data.get("milk_ml", 0))
+		var minute := _time_to_minutes(str(data.get("start_time", data.get("time", "00:00"))))
+		times[day_index].append(minute)
+	return {"totals": totals, "times": times}
+
+
+func _diaper_analysis_points(records: Array, dates: Array) -> Array:
+	var index := _date_index_map(dates)
+	var points: Array = []
+	for record in records:
+		if str(record.get("kind", "")) != "diaper":
+			continue
+		var date := str(record.get("date", ""))
+		if not index.has(date):
+			continue
+		var data: Dictionary = record.get("data", {})
+		var diaper_type := str(data.get("diaper_type", "小便"))
+		var amount := str(data.get("pee_amount", data.get("poop_amount", "中")))
+		points.append({
+			"day_index": int(index[date]),
+			"minute": _time_to_minutes(str(data.get("time", "00:00"))),
+			"type": diaper_type,
+			"amount": amount
+		})
+	return points
+
+
+func _date_index_map(dates: Array) -> Dictionary:
+	var result := {}
+	for i in range(dates.size()):
+		result[str(dates[i])] = i
+	return result
+
+
+func _time_to_minutes(value: String) -> int:
+	var parts := value.split(":")
+	if parts.size() != 2:
+		return 0
+	return clampi(int(parts[0]) * 60 + int(parts[1]), 0, 1439)
 
 
 func _render_visual(body: VBoxContainer, date: String, weekly: bool) -> void:
